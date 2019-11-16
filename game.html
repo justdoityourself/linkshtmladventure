@@ -1,0 +1,559 @@
+<head>
+    <link rel="stylesheet" type="text/css" href="vgrid.css">
+
+    <script>
+
+        window.oncontextmenu = () => false;    
+
+        let null_tile = 5*57 + 1;
+        let tilecol = 57;
+        let tileblock = 17;
+        let rightbrush = -1;
+        let leftbrush = -1;
+        let is_left_down = false;
+        let is_right_down = false;
+        let scale=3;
+
+        let water = {
+            title:'Water',
+            passable:false
+        };
+
+        let meta = {
+            "0_0":water,
+            "0_1":water,
+            "1_0":water,
+            "1_1":water,
+        }
+
+        function get_meta(i,j)
+        {
+            return meta[`${i}_${j}`];
+        }
+
+        function select_tile(e,n)
+        {
+            let row = Math.floor(n / tilecol);
+            let column = n % tilecol;
+
+            e.current_tile = n;
+            e.current_x = column;
+            e.current_y = row;
+
+            e.style.backgroundPositionY = `-${row * tileblock}px`;
+            e.style.backgroundPositionX = `-${column * tileblock}px`;
+        }
+
+        function save()
+        {
+            let r = {}
+            r.map = _save('map');
+            r.map2 = _save('map2');
+
+            return r;
+        }
+
+        //From Stack Overflow:
+        function download(filename, text) 
+        {
+            var element = document.createElement('a');
+            element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+            element.setAttribute('download', filename);
+
+            element.style.display = 'none';
+            document.body.appendChild(element);
+
+            element.click();
+
+            document.body.removeChild(element);
+        }
+
+        function save_file()
+        {
+            let data = JSON.stringify(save());
+            let name = document.getElementById('filename').value;
+
+            download(name,data);
+        }
+
+        function load_file(e)
+        {
+            const reader = new FileReader()
+            reader.onload = (e)=>
+            {
+                let o = JSON.parse(e.target.result);
+                
+                for(k in o)
+                    window.localStorage[k] = o[k];
+
+                load();
+            };
+
+            reader.readAsText(e.target.files[0])
+        }
+
+        function _save(name)
+        {
+            let map = document.getElementById(name);
+
+            let tiles = [];
+
+            for(let i = 0; i < map.children.length; i++)
+                tiles.push(map.children[i].current_tile);
+
+            window.localStorage[name] = tiles;
+
+            return tiles;
+        }
+
+        function load()
+        {
+            _load('map');
+            _load('map2');
+        }
+
+        function _load(name)
+        {
+            let map = document.getElementById(name);
+
+            let tiles = window.localStorage[name].split(',');
+
+            for(let i = 0; i < map.children.length; i++)
+            {
+                map.children[i].current_tile = parseInt(tiles[i]);
+                select_tile(map.children[i],map.children[i].current_tile);
+            } 
+        }
+
+        function next_tile(e)
+        {
+            if(document.getElementById('read_only_checkbox').checked)
+                return;
+
+            if(leftbrush == -1)
+                return; 
+
+            if(e.current_tile == leftbrush)
+                return;
+
+            e.current_tile ++;
+            
+            if(leftbrush != -1)
+                e.current_tile = leftbrush;
+
+            select_tile(e,e.current_tile);
+
+            save();
+        }
+
+        function prev_tile(e)
+        {
+            if(document.getElementById('read_only_checkbox').checked)
+                return;
+
+            if(rightbrush == -1)
+                return; 
+
+            if(e.current_tile == rightbrush)
+                return;
+
+            e.current_tile --;
+
+            if(rightbrush != -1)
+                e.current_tile = rightbrush;
+
+            select_tile(e,e.current_tile);
+
+            save();
+        }
+
+        function new_tile()
+        {
+            let ne = document.createElement('div');
+            ne.style.height='16px';
+            ne.style.width='16px';
+
+            //use scale per block
+
+            ne.style.backgroundPositionY = '0px';
+            ne.style.backgroundPositionX = '0px';
+            ne.style.transform="scale(3)";
+            //ne.style.backgroundSize='16px 16px';
+            ne.style.backgroundImage = 'url(tiles.png)';
+
+            ne.current_tile = 0;
+            ne.current_x = 0;
+            ne_current_y = 0;
+            ne.onmousedown = (e)=>
+            {
+                if(e.which == 3)
+                {
+                    is_right_down = true;
+                    prev_tile(ne)
+                }
+                else
+                {
+                    is_left_down = true;
+                    next_tile(ne);
+                }
+            }
+
+            ne.onmousemove = (e)=>
+            {
+                if(is_right_down)
+                    prev_tile(ne)
+                else if(is_left_down)
+                    next_tile(ne);
+            }
+
+            return ne;
+        }
+
+        function configure_map(name,x,y,c)
+        {
+            let map = document.getElementById(name);
+
+            if(c) map.innerHTML = "";
+
+            map.style.setProperty('--gr',`repeat(${y},48px)`);
+            map.style.setProperty('--gc',`repeat(${x},48px)`);
+
+            return map;
+        }
+
+        function loadmap(col,row,clear)
+        {
+            let map = configure_map('map',col,row,clear);
+            let map2 = configure_map('map2',col,row,clear);
+
+            let tile_lookup = {};
+
+            let get_tile = (i,j)=> tile_lookup[`${i}_${j}`];
+
+            let link_top = 0;
+            let link_left = 0;
+            let link_tile = 0;
+            let link_tile_row = 1;
+            let link_tile_column = 0;
+            let last_tile = null;
+
+            let marker = document.createElement('div');
+            marker.style.witdh = '8px';
+            marker.style.height = '8px';
+            marker.style.borderRadius = '50%';
+            marker.style.background = 'red';
+
+            let orientation = 'l';
+            let mc = document.getElementById('mainchar');
+
+            document.onkeydown = (e)=>
+            {
+                if (e.ctrlKey)
+                    document.getElementById('editor').style.display='grid';
+
+                let can_move = ()=>
+                {
+                    let res=true;
+
+                    link_tile_row = Math.floor((link_top-25)/48)+2; //Math.floor(n / tilecol);
+                    link_tile_column = Math.floor((link_left-25)/48)+1 //n%tilecol;
+
+                    n = link_tile_row * tilecol + link_tile_column;
+                    let tile = get_tile(link_tile_row,link_tile_column);
+                    if(!tile)
+                        return true;
+                    let meta = get_meta(tile.current_y,tile.current_x)
+
+                    if(tile != last_tile)
+                    {
+                        //if(last_tile)
+                            //last_tile.removeChild(marker);
+
+                        console.log('link (r/c):',link_tile_row,link_tile_column,tile.current_tile, meta)
+                        last_tile = tile;
+                        //last_tile.appendChild(marker);
+                    }
+
+                    if(meta && !meta.passable)
+                        res = false;
+
+                    return res;
+                };
+
+                let move_speed = (e.shiftKey) ? 10 : 2;               
+                if (e.keyCode == '38') 
+                {
+                    if(link_tile_row!=0)
+                    {
+                        link_top-=move_speed;
+                        if(!can_move())
+                            link_top+=move_speed;
+                        
+                        mc.style.top = `${link_top}px`;
+                        mc.className = 'walk_up';
+                        document.body.scrollTop = link_top-window.innerHeight/2;
+                    }
+                    orientation='u';
+                    e.preventDefault();
+                }
+                else if (e.keyCode == '40') 
+                {
+                    if(link_tile_row<row-1)
+                    {
+                        link_top+=move_speed;
+                        if(!can_move())
+                            link_top-=move_speed;
+                        
+                        mc.style.top = `${link_top}px`;
+                        mc.className = 'walk_down';
+                        document.body.scrollTop = link_top-window.innerHeight/2;
+                    }
+                    orientation='d';
+                    e.preventDefault();
+                }
+                else if (e.keyCode == '37') 
+                {
+                    if(link_tile_column!=0)
+                    {
+                        link_left-=move_speed;
+                        if(!can_move())
+                            link_left+=move_speed;
+
+                        mc.style.left = `${link_left}px`;
+                        mc.className = 'walk_left';
+                        document.body.scrollLeft = link_left-window.innerWidth/2;
+                    }
+                    orientation='l';
+                    e.preventDefault();
+                }
+                else if (e.keyCode == '39') 
+                {
+                    if(link_tile_column<col-1)
+                    {
+                        link_left+=move_speed;
+                        if(!can_move())
+                            link_left-=move_speed;
+
+                        mc.style.left = `${link_left}px`;
+                        mc.className = 'walk_right';
+                        document.body.scrollLeft = link_left-window.innerWidth/2;
+                    }
+                    orientation='r';
+                    e.preventDefault();
+                }
+            }
+
+            document.onkeyup = ()=>
+            {
+                document.getElementById('editor').style.display='none';
+
+                switch(orientation)
+                {
+                    case 'l': mc.className='stand_left';break;
+                    case 'r': mc.className='stand_right';break;
+                    case 'u': mc.className='stand_up';break;
+                    case 'd': mc.className='stand_down';break;
+                }
+            }
+
+            document.onmouseup = ()=>
+            {
+                is_left_down = false;
+                is_right_down = false;
+            }
+
+            document.getElementById('layer2').style.pointerEvents='none';
+
+            for(let i = 0; i < row; i++)
+            {
+                for(let j = 0; j < col; j++)
+                {
+                    let tm1 = new_tile();
+                    map.appendChild(tm1);
+                    
+                    tile_lookup[`${i}_${j}`] = tm1;
+
+                    let tm2 = new_tile();
+                    select_tile(tm2,null_tile);
+                    map2.appendChild(tm2);
+                }
+            }
+
+            if(!clear) load();
+
+            document.body.scrollTop = link_top-window.innerHeight/2;
+            document.body.scrollLeft = link_left-window.innerWidth/2;
+        }
+
+        function get_brush(x,y)
+        {
+            let r = Math.floor(y/tileblock) * tilecol;
+            r += Math.floor(x/17);
+
+            return r;
+        }
+
+        function setbrush()
+        {
+            let e = event;
+            var rect = e.target.getBoundingClientRect();
+
+            if(e.which == 3)
+                rightbrush = get_brush(e.clientX - rect.left,e.clientY - rect.top);
+            else
+                leftbrush = get_brush(e.clientX - rect.left,e.clientY - rect.top);
+        }
+
+        function on_check()
+        {
+            let e = document.getElementById('ltcb');
+
+            if(e.checked)
+                document.getElementById('layer2').style.pointerEvents='auto'; 
+            else
+                document.getElementById('layer2').style.pointerEvents='none';
+        }
+    </script>
+
+    <style>
+        ::-webkit-scrollbar 
+        {
+            width: 0px;
+            height:0px;
+        }
+
+        @keyframes move{
+            from{background-position-x:-20px;}
+            to{background-position-x:-470px;}
+        }
+
+        .walk_left
+        {
+            background-position-y:0px;
+            width: 50px;
+            height: 90px;
+            background-image : url(char.png);
+            animation: move 1s steps(5) infinite;
+        }
+
+        .walk_down
+        {
+            background-position-y:90px;
+            width: 50px;
+            height: 90px;
+            background-image : url(char.png);
+            animation: move 1s steps(5) infinite;
+        }
+
+        .walk_right
+        {
+            background-position-y:270px;
+            width: 50px;
+            height: 90px;
+            background-image : url(char.png);
+            animation: move 1s steps(5) infinite;
+        }
+
+        .walk_up
+        {
+            background-position-y:180px;
+            width: 50px;
+            height: 90px;
+            background-image : url(char.png);
+            animation: move 1s steps(5) infinite;
+        }
+
+
+
+        .stand_left
+        {
+            background-position-x:-20px;
+            background-position-y:0px;
+            width: 50px;
+            height: 90px;
+            background-image : url(char.png);
+        }
+
+        .stand_down
+        {
+            background-position-x:-20px;
+            background-position-y:90px;
+            width: 50px;
+            height: 90px;
+            background-image : url(char.png);
+        }
+
+        .stand_right
+        {
+            background-position-x:-290px;
+            background-position-y:270px;
+            width: 50px;
+            height: 90px;
+            background-image : url(char.png);
+        }
+
+        .stand_up
+        {
+            background-position-x:-20px;
+            background-position-y:180px;
+            width: 50px;
+            height: 90px;
+            background-image : url(char.png);
+        }
+    </style>
+</head>
+
+<body onload='loadmap(40,20)' style='background:black;height:100vh;width:100vw;position:relative;margin:0px;'>
+    
+    <div style='position:absolute;top:0px;left:0px;height:100vh;width:100vw;'>
+        <!--transform: scale(2.9) translate(33%, 33%);-->
+        <div style='background:rgb(215,215,215);width:100%;height:100%;'></div>
+    </div>
+
+    <div style='position:absolute;top:0px;left:0px;height:100vh;width:100vw;'>
+        <div class=gvt id=map style='width:auto;height:auto;'></div>
+    </div>
+
+    <div id=layer2 style='position:absolute;top:0px;left:0px;height:100vh;width:100vw;'>
+        <div class=gvt id=map2 style='width:auto;height:auto;'></div>
+    </div>
+
+    <div>
+        <div id=mainchar class=stand_down style='position:absolute;top:0px;left:0px;'></div>
+    </div>
+
+    <div id=editor class='gvt' style='background:rgba(245,245,245,0.8);display:none;position:fixed;top:0px;left:0px;height:100vh;width:100vw;'>
+        <div>
+            <div>
+                <input id=read_only_checkbox checked type='checkbox' onclick='on_check(event)'>ReadOnly</input>
+
+                <input id=ltcb type='checkbox' onclick='on_check(event)'>Layer2</input>
+                
+                <input id=filename type=text value='Name'></input>
+
+                <input type=button value='Save' onclick='save_file()'></input>
+
+                <input type=button value='Clear' onclick='loadmap(40,20,true)'></input>
+
+                <input type=file value='Load' onchange='load_file(event)'></input>
+            </div>
+            <img src='tiles.png' onmousedown='setbrush()'></img>
+        </div>
+    </div>
+
+    <div class='gvt' style='grid-auto-flow: row dense;-gar:64px;--gc:repeat(auto-fit, minmax(64px,64px));--gr:invalid;--gg:4px;background:gray;position:fixed;bottom:0px;left:0px;height:64px;width:100vw;'>
+        <!--ADD New Character Status Items here-->
+        <img src='heart.png' height=48 width=48></img>
+        <img src='heart.png' height=48 width=48></img>
+        <img src='heart.png' height=48 width=48></img>
+        <img src='health_potion.png' height=48></img>
+    </div>
+
+    <div class='gvt' style='--gg:4px;--gar:64px;--gr:invalid;--gc:1fr;background:gray;position:fixed;top:0px;right:0px;height:calc(100vh - 64px);width:64px;'>
+        <!--Add new Character Inventory here-->
+        <img src= 'Long_bow_Ase.png'> 
+		<img src= 'grenade.png'>	
+		<img src= 'sword.png'>
+    </div>
+
+</body>
